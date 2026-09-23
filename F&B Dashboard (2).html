@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>F&B Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --navy:#0b2545; --navy2:#13315c; --gold:#c9a24b; --bg:#f4f6f9; --card:#ffffff;
+  --text:#1a1f29; --sub:#5b6474; --border:#e2e6ed;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#12151c; --card:#1b1f29; --text:#eef1f6; --sub:#9aa4b5; --border:#2b3040; }
+}
+:root[data-theme="dark"]{ --bg:#12151c; --card:#1b1f29; --text:#eef1f6; --sub:#9aa4b5; --border:#2b3040; }
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+header{background:var(--navy);color:#fff;padding:14px 20px calc(14px + env(safe-area-inset-top,0px));display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+header h1{font-size:16px;margin:0;letter-spacing:.5px;font-weight:700;}
+header input{background:var(--navy2);border:1px solid #2c4b7a;color:#fff;padding:6px 10px;border-radius:6px;font-size:13px;}
+nav{display:flex;gap:4px;background:var(--navy2);padding:0 16px;overflow-x:auto;}
+nav button{background:none;border:none;color:#cdd7e6;padding:12px 16px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;}
+nav button.active{color:#fff;border-bottom-color:var(--gold);}
+main{padding:16px;max-width:1400px;margin:0 auto;}
+.page{display:none;} .page.active{display:block;}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(12,1fr);}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;overflow:auto;}
+.card h3{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--sub);}
+.kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.kpi{flex:1;min-width:130px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+.kpi .v{font-size:20px;font-weight:700;} .kpi .l{font-size:11px;color:var(--sub);text-transform:uppercase;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);}
+th{color:var(--sub);font-weight:600;text-transform:uppercase;font-size:10px;}
+tr:hover td{background:rgba(201,162,75,.08);}
+.c6{grid-column:span 6;} .c4{grid-column:span 4;} .c8{grid-column:span 8;} .c12{grid-column:span 12;}
+@media(max-width:800px){.c6,.c4,.c8{grid-column:span 12;}}
+canvas{max-height:260px;}
+.databox{padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:16px;}
+.databox textarea{width:100%;height:100px;font-family:monospace;font-size:11px;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);}
+.databox button,.databox label.filebtn{margin-top:8px;margin-right:8px;padding:8px 14px;border:none;border-radius:6px;background:var(--navy);color:#fff;font-weight:600;font-size:12px;cursor:pointer;display:inline-block;}
+.databox input[type=file]{display:none;}
+.databox summary{cursor:pointer;font-weight:600;font-size:13px;color:var(--navy2);}
+:root[data-theme="dark"] .databox summary,:root:not([data-theme="light"]) .databox summary{color:var(--gold);}
+.hint{font-size:11px;color:var(--sub);margin-top:6px;}
+.filterbar{background:var(--card);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;}
+.filterbar select{padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);}
+.filterbar button{padding:6px 12px;border:none;border-radius:6px;background:var(--navy);color:#fff;font-weight:600;font-size:12px;cursor:pointer;}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="outletName">F&amp;B DASHBOARD</h1>
+  <input id="outletInput" placeholder="Outlet / property name">
+</header>
+<nav>
+  <button class="tab active" data-p="p1">High Level</button>
+  <button class="tab" data-p="p2">Item Toplist</button>
+  <button class="tab" data-p="p3">F&B Cost of Sales</button>
+</nav>
+<div class="filterbar">
+  <label>Year</label><select id="yearSelect"></select>
+  <label>From</label><select id="monthFromSelect"></select>
+  <label>To</label><select id="monthToSelect"></select>
+  <button onclick="applyFilter()">Apply Filter</button>
+  <span id="filterNote" class="hint"></span>
+</div>
+<main>
+
+<details class="databox" id="dataBox">
+<summary>Load / replace data (click to expand)</summary>
+<p class="hint"><b>Upload your Excel workbook directly</b> — same sheet names as before: DATA_Transaction, DATA_ItemLedger, DATA_Items, DATA_Toplist, DATA_Category. Everything below runs in your browser; nothing is uploaded anywhere.</p>
+<label class="filebtn" for="excelFile">Upload Excel (.xlsx)</label>
+<input type="file" id="excelFile" accept=".xlsx,.xls">
+<span id="fileStatus" class="hint"></span>
+<p class="hint">Or paste/edit raw JSON:</p>
+<textarea id="dataInput" spellcheck="false"></textarea><br>
+<button onclick="loadSample()">Load Sample</button>
+<button onclick="applyData()">Apply JSON</button>
+<button onclick="downloadSchema()">Download Schema Template</button>
+</details>
+
+<div class="page active" id="p1">
+  <div class="kpis" id="kpiRow"></div>
+  <div class="grid">
+    <div class="card c6"><h3>Food Checks</h3><table id="foodChecksTbl"></table></div>
+    <div class="card c6"><h3>Beverage Checks</h3><table id="beverageChecksTbl"></table></div>
+    <div class="card c6"><h3>Daily Trend (2025 vs 2026)</h3><canvas id="dailyTrend"></canvas></div>
+    <div class="card c6"><h3>Hourly Sales &amp; Covers (2025 vs 2026)</h3><canvas id="hourlySales"></canvas></div>
+    <div class="card c6"><h3>Hourly Ave Check (2025 vs 2026)</h3><canvas id="aveCheck"></canvas></div>
+    <div class="card c6"><h3>Sales by Meal Period</h3><table id="mealPeriodTbl"></table></div>
+    <div class="card c12"><h3>Sales by Major Division</h3><table id="divisionTbl"></table></div>
+  </div>
+</div>
+
+<div class="page" id="p2">
+  <div class="grid">
+    <div class="card c12"><h3>Category Breakdown</h3><table id="categoryTbl"></table></div>
+    <div class="card c12"><h3>Movement of Sales per Major Division</h3><canvas id="movementChart"></canvas></div>
+    <div class="card c12"><h3>Item Toplist</h3><table id="itemTbl"></table></div>
+  </div>
+</div>
+
+<div class="page" id="p3">
+  <div class="grid">
+    <div class="card c8"><h3>F&amp;B Cost of Sales Trend</h3><canvas id="costTrend"></canvas></div>
+    <div class="card c4"><h3>F&amp;B Cost Share</h3><canvas id="costShare"></canvas></div>
+    <div class="card c6"><h3>Overall F&amp;B Cost of Sales</h3><table id="overallCostTbl"></table></div>
+    <div class="card c6"><h3>Menu Toplist — Cost of Sales %</h3><table id="menuCostTbl"></table></div>
+    <div class="card c6"><h3>Recipe Component Movement from Sales</h3><table id="recipeTbl"></table></div>
+    <div class="card c6"><h3>Purchase Unit Cost Movement</h3><table id="purchaseTbl"></table></div>
+  </div>
+</div>
+
+</main>
+<script>
+const LS_KEY='fnb_dashboard_data_v2';
+let charts={};
+let currentWB=null;
+const BEV_KW=['COFFEE','TEA','BEER','WINE','SHAKE','SMOOTHIE','SOFTDRINK','WATER','MOCKTAIL','COCKTAIL','CHOCOLATE','DAIRY'];
+function classify(name){ const n=(name||'').toUpperCase(); return BEV_KW.some(k=>n.includes(k))?'Beverage':'Food'; }
+const SCHEMA={
+  outlet:"Sample Outlet",
+  kpis:[{label:"Revenue",value:"₱0"},{label:"Covers",value:"0"},{label:"Ave Check",value:"₱0"},{label:"Food Cost %",value:"0%"},{label:"Beverage Cost %",value:"0%"}],
+  dailyTrend:[{date:"Jan",sales2025:0,sales2026:0}],
+  hourlySales:[{hour:"12:00",sales2025:0,sales2026:0,covers2025:0,covers2026:0}],
+  mealPeriod:[{period:"Breakfast",sales:0,checks:0}],
+  majorDivision:[{division:"FOOD",sales:0,pct:"0%"}],
+  categoryBreakdown:[{category:"COFFEE",sales:0,qty:0}],
+  foodChecks:[{category:"BREAKFAST",sales:0,qty:0}],
+  beverageChecks:[{category:"COFFEE",sales:0,qty:0}],
+  itemToplist:[{item:"Sample Item",qty:0,sales:0}],
+  movement:[{period:"Jan",food:0,beverage:0}],
+  costTrend:[{month:"Jan",costPct:0}],
+  costShare:[{category:"Food",pct:0}],
+  menuCost:[{item:"Sample Item",costPct:"0%"}],
+  recipeComponent:[{component:"Sample Component",movement:0}],
+  purchaseUnitCost:[{item:"Sample Purchase",qty:0,cost:0}],
+  overallCost:[{metric:"Food Cost %",value:"0%"}]
+};
+function tableFrom(el,rows){
+  if(!rows||!rows.length){el.innerHTML='<tr><td>No data loaded</td></tr>';return;}
+  const cols=Object.keys(rows[0]);
+  el.innerHTML='<thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>'+
+    rows.map(r=>'<tr>'+cols.map(c=>`<td>${typeof r[c]==='number'?r[c].toLocaleString():r[c]}</td>`).join('')+'</tr>').join('')+'</tbody>';
+}
+function mkChart(id,type,labels,datasets,opts={}){
+  if(charts[id])charts[id].destroy();
+  charts[id]=new Chart(document.getElementById(id),{type,data:{labels,datasets},options:Object.assign({responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:getComputedStyle(document.body).color}}}},opts)});
+}
+function render(d){
+  document.getElementById('outletName').textContent=(d.outlet||'F&B DASHBOARD')+' — F&B DASHBOARD';
+  document.getElementById('outletInput').value=d.outlet||'';
+  document.getElementById('kpiRow').innerHTML=(d.kpis||[]).map(k=>`<div class="kpi"><div class="v">${k.value}</div><div class="l">${k.label}</div></div>`).join('');
+  const fc=d.foodChecks||(d.categoryBreakdown||[]).filter(x=>classify(x.category)==='Food');
+  const bc=d.beverageChecks||(d.categoryBreakdown||[]).filter(x=>classify(x.category)==='Beverage');
+  tableFrom(document.getElementById('foodChecksTbl'),fc);
+  tableFrom(document.getElementById('beverageChecksTbl'),bc);
+  mkChart('dailyTrend','line',(d.dailyTrend||[]).map(r=>r.date),[
+    {label:'2025',data:(d.dailyTrend||[]).map(r=>r.sales2025),borderColor:'#8fa6c9',tension:.3},
+    {label:'2026',data:(d.dailyTrend||[]).map(r=>r.sales2026),borderColor:'#c9a24b',tension:.3}
+  ]);
+  mkChart('hourlySales','bar',(d.hourlySales||[]).map(r=>r.hour),[
+    {label:'Sales 2025',data:(d.hourlySales||[]).map(r=>r.sales2025),backgroundColor:'#8fa6c9'},
+    {label:'Sales 2026',data:(d.hourlySales||[]).map(r=>r.sales2026),backgroundColor:'#c9a24b'}
+  ]);
+  mkChart('aveCheck','line',(d.hourlySales||[]).map(r=>r.hour),[
+    {label:'Ave Check 2025',data:(d.hourlySales||[]).map(r=>r.covers2025?Math.round(r.sales2025/r.covers2025):0),borderColor:'#8fa6c9',tension:.3},
+    {label:'Ave Check 2026',data:(d.hourlySales||[]).map(r=>r.covers2026?Math.round(r.sales2026/r.covers2026):0),borderColor:'#c9a24b',tension:.3}
+  ]);
+  tableFrom(document.getElementById('mealPeriodTbl'),d.mealPeriod);
+  tableFrom(document.getElementById('divisionTbl'),d.majorDivision);
+  tableFrom(document.getElementById('categoryTbl'),d.categoryBreakdown);
+  mkChart('movementChart','line',(d.movement||[]).map(r=>r.period),[
+    {label:'Food',data:(d.movement||[]).map(r=>r.food),borderColor:'#0b2545',backgroundColor:'rgba(11,37,69,.15)',fill:true},
+    {label:'Beverage',data:(d.movement||[]).map(r=>r.beverage),borderColor:'#c9a24b',backgroundColor:'rgba(201,162,75,.15)',fill:true}
+  ]);
+  tableFrom(document.getElementById('itemTbl'),d.itemToplist);
+  mkChart('costTrend','line',(d.costTrend||[]).map(r=>r.month),[{label:'F&B Cost %',data:(d.costTrend||[]).map(r=>r.costPct),borderColor:'#c9a24b',tension:.3}]);
+  mkChart('costShare','doughnut',(d.costShare||[]).map(r=>r.category),[{data:(d.costShare||[]).map(r=>r.pct),backgroundColor:['#0b2545','#13315c','#c9a24b','#8fa6c9','#5b6474','#9c7a3c','#3c5c8f']}]);
+  tableFrom(document.getElementById('overallCostTbl'),d.overallCost);
+  tableFrom(document.getElementById('menuCostTbl'),d.menuCost);
+  tableFrom(document.getElementById('recipeTbl'),d.recipeComponent);
+  tableFrom(document.getElementById('purchaseTbl'),d.purchaseUnitCost);
+}
+function save(d){ try{localStorage.setItem(LS_KEY,JSON.stringify(d));}catch(e){} }
+function loadSample(){ document.getElementById('dataInput').value=JSON.stringify(SCHEMA,null,2); applyData(); }
+function applyData(){
+  try{
+    const raw=document.getElementById('dataInput').value.trim();
+    const d=raw?JSON.parse(raw):SCHEMA;
+    render(d); save(d);
+  }catch(e){ alert('Invalid JSON: '+e.message); }
+}
+function downloadSchema(){
+  const blob=new Blob([JSON.stringify(SCHEMA,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='fnb_dashboard_schema.json'; a.click();
+}
+function excelDateToUTC(serial){ return new Date(Date.UTC(1899,11,30)+Math.round(serial*86400000)); }
+const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function processWorkbook(wb,filter){
+  filter=filter||{year:null,monthFrom:1,monthTo:12};
+  function inRange(serial){
+    if(filter.year==null) return true;
+    if(serial==null) return false;
+    const d=excelDateToUTC(serial);
+    return d.getUTCFullYear()===Number(filter.year) && (d.getUTCMonth()+1)>=filter.monthFrom && (d.getUTCMonth()+1)<=filter.monthTo;
+  }
+  function rows(name){ const ws=wb.Sheets[name]; return ws?XLSX.utils.sheet_to_json(ws,{raw:true,defval:null}):[]; }
+  const tx=rows('DATA_Transaction').filter(r=>r['Transaction Type']==='Sales').filter(r=>inRange(r['Date']));
+  const items=rows('DATA_Items'); const il=rows('DATA_ItemLedger');
+  const top=rows('DATA_Toplist').filter(r=>r['Type']==='Items');
+  const cat=rows('DATA_Category').filter(r=>r['Description']);
+  const itemGroup={}; items.forEach(r=>{ itemGroup[r['No.']]=r['Gen. Prod. Posting Group']; });
+  const monthlyRev={},monthlyCost={},hourly={},meal={Breakfast:{sales:0,checks:0},Lunch:{sales:0,checks:0},Snacks:{sales:0,checks:0},Dinner:{sales:0,checks:0}};
+  tx.forEach(r=>{
+    if(r['Date']==null) return;
+    const d=excelDateToUTC(r['Date']); const mk=MONTH_NAMES[d.getUTCMonth()];
+    const net=Math.abs(r['Net Amount']||0), cost=Math.abs(r['Cost Amount']||0);
+    monthlyRev[mk]=(monthlyRev[mk]||0)+net; monthlyCost[mk]=(monthlyCost[mk]||0)+cost;
+    const hr=Math.floor(((r['Time']||0)%1)*24);
+    if(!hourly[hr]) hourly[hr]={sales:0,covers:0};
+    hourly[hr].sales+=net; hourly[hr].covers+=(r['No. of Covers']||0);
+    let mp='Dinner';
+    if(hr>=6&&hr<=10) mp='Breakfast'; else if(hr>=11&&hr<=14) mp='Lunch'; else if(hr>=15&&hr<=17) mp='Snacks';
+    meal[mp].sales+=net; meal[mp].checks+=1;
+  });
+  const order=Object.keys(monthlyRev).sort((a,b)=>MONTH_NAMES.indexOf(a)-MONTH_NAMES.indexOf(b));
+  const dailyTrend=order.map(m=>({date:m,sales2025:0,sales2026:Math.round(monthlyRev[m])}));
+  const costTrend=order.map(m=>({month:m,costPct:Math.round(monthlyCost[m]/monthlyRev[m]*1000)/10}));
+  const hourlySales=Object.keys(hourly).map(Number).sort((a,b)=>a-b).map(h=>({hour:h+':00',sales2025:0,sales2026:Math.round(hourly[h].sales),covers2025:0,covers2026:Math.round(hourly[h].covers)}));
+  const mealPeriod=Object.keys(meal).map(k=>({period:k,sales:Math.round(meal[k].sales),checks:meal[k].checks}));
+  const ilSales=il.filter(r=>r['Entry Type']==='Sale').filter(r=>inRange(r['Posting Date']));
+  const divTotals={},moveMap={};
+  ilSales.forEach(r=>{
+    const grp=itemGroup[r['Item No.']]||'OTHER'; const amt=Math.abs(r['Sales Amount (Actual)']||0);
+    divTotals[grp]=(divTotals[grp]||0)+amt;
+    if(r['Posting Date']!=null){ const d=excelDateToUTC(r['Posting Date']); const mk=MONTH_NAMES[d.getUTCMonth()];
+      if(!moveMap[mk]) moveMap[mk]={FOOD:0,BEVERAGE:0};
+      if(grp==='FOOD') moveMap[mk].FOOD+=amt; if(grp==='BEVERAGE') moveMap[mk].BEVERAGE+=amt; }
+  });
+  const totalDiv=Object.values(divTotals).reduce((a,b)=>a+b,0);
+  const majorDivision=Object.entries(divTotals).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({division:k,sales:Math.round(v),pct:(v/totalDiv*100).toFixed(1)+'%'}));
+  const movement=order.map(m=>({period:m,food:Math.round((moveMap[m]||{}).FOOD||0),beverage:Math.round((moveMap[m]||{}).BEVERAGE||0)}));
+  const categoryBreakdown=cat.map(r=>({category:r['Description'],sales:Math.round(Math.abs(r['Amount']||0)),qty:Math.round(r['Qty.']||0)})).sort((a,b)=>b.sales-a.sales);
+  const foodChecks=categoryBreakdown.filter(x=>classify(x.category)==='Food');
+  const beverageChecks=categoryBreakdown.filter(x=>classify(x.category)==='Beverage');
+  const costShare=categoryBreakdown.slice(0,6).map(c2=>{const row=cat.find(r=>r['Description']===c2.category); return {category:c2.category,pct:Math.round(Math.abs((row&&row['Cost Amount'])||0))};});
+  const otherCost=cat.reduce((s,r)=>s+Math.abs(r['Cost Amount']||0),0)-costShare.reduce((s,c2)=>s+c2.pct,0);
+  costShare.push({category:'OTHER',pct:Math.round(otherCost)});
+  const topSorted=top.map(r=>({item:(r['Description']||'').trim(),qty:Math.round(r['Qty.']||0),sales:Math.abs(r['Amount']||0),costAmt:Math.abs(r['Cost Amount']||0)})).sort((a,b)=>b.sales-a.sales);
+  const itemToplist=topSorted.slice(0,15).map(r=>({item:r.item,qty:r.qty,sales:Math.round(r.sales)}));
+  const menuCost=topSorted.slice(0,12).map(r=>({item:r.item,costPct:r.sales?(r.costAmt/r.sales*100).toFixed(1)+'%':'0%'}));
+  const acMap={};
+  il.filter(r=>r['Entry Type']==='Assembly Consumption').filter(r=>inRange(r['Posting Date'])).forEach(r=>{ const k=(r['Description']||'?').trim(); acMap[k]=(acMap[k]||0)+Math.abs(r['Quantity']||0); });
+  const recipeComponent=Object.entries(acMap).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,v])=>({component:k,movement:Math.round(v*10)/10}));
+  const puMap={};
+  il.filter(r=>r['Entry Type']==='Purchase').filter(r=>inRange(r['Posting Date'])).forEach(r=>{ const k=(r['Description']||'?').trim(); if(!puMap[k]) puMap[k]={qty:0,cost:0}; puMap[k].qty+=(r['Quantity']||0); puMap[k].cost+=(r['Cost Amount (Actual)']||0); });
+  const purchaseUnitCost=Object.entries(puMap).sort((a,b)=>b[1].cost-a[1].cost).slice(0,10).map(([k,v])=>({item:k,qty:Math.round(v.qty*10)/10,cost:Math.round(v.cost)}));
+  const foodSales=divTotals['FOOD']||0, bevSales=divTotals['BEVERAGE']||0;
+  const foodCost=ilSales.filter(r=>itemGroup[r['Item No.']]==='FOOD').reduce((s,r)=>s+Math.abs(r['Cost Amount (Actual)']||0),0);
+  const bevCost=ilSales.filter(r=>itemGroup[r['Item No.']]==='BEVERAGE').reduce((s,r)=>s+Math.abs(r['Cost Amount (Actual)']||0),0);
+  const foodPct=foodSales?(foodCost/foodSales*100):0, bevPct=bevSales?(bevCost/bevSales*100):0;
+  const blended=(foodSales+bevSales)?((foodCost+bevCost)/(foodSales+bevSales)*100):0;
+  const overallCost=[
+    {metric:'Food Cost %',value:foodPct.toFixed(1)+'%'},
+    {metric:'Beverage Cost %',value:bevPct.toFixed(1)+'%'},
+    {metric:'Blended F&B Cost %',value:blended.toFixed(1)+'%'},
+    {metric:'Total F&B Cost (₱)',value:Math.round(foodCost+bevCost).toLocaleString()}
+  ];
+  const totalRev=tx.reduce((s,r)=>s+Math.abs(r['Net Amount']||0),0);
+  const totalCovers=tx.reduce((s,r)=>s+(r['No. of Covers']||0),0);
+  const kpis=[
+    {label:'Revenue',value:'₱'+(totalRev/1e6).toFixed(2)+'M'},
+    {label:'Covers',value:Math.round(totalCovers).toLocaleString()},
+    {label:'Ave Check',value:'₱'+(totalCovers?Math.round(totalRev/totalCovers).toLocaleString():'0')},
+    {label:'Food Cost %',value:foodPct.toFixed(1)+'%'},
+    {label:'Beverage Cost %',value:bevPct.toFixed(1)+'%'}
+  ];
+  return {outlet:document.getElementById('outletInput').value||'',kpis,dailyTrend,hourlySales,mealPeriod,majorDivision,categoryBreakdown,foodChecks,beverageChecks,itemToplist,movement,costTrend,costShare,menuCost,recipeComponent,purchaseUnitCost,overallCost};
+}
+function populateMonthSelects(){
+  const opts=MONTH_NAMES.map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
+  document.getElementById('monthFromSelect').innerHTML=opts;
+  document.getElementById('monthToSelect').innerHTML=opts;
+  document.getElementById('monthToSelect').value=12;
+}
+function populateYearSelect(years){
+  document.getElementById('yearSelect').innerHTML=years.map(y=>`<option value="${y}">${y}</option>`).join('');
+  document.getElementById('yearSelect').value=years[years.length-1];
+}
+function detectYears(wb){
+  const ws=wb.Sheets['DATA_Transaction']; if(!ws) return [new Date().getFullYear()];
+  const rs=XLSX.utils.sheet_to_json(ws,{raw:true,defval:null});
+  const yrs=new Set();
+  rs.forEach(r=>{ if(r['Date']!=null) yrs.add(excelDateToUTC(r['Date']).getUTCFullYear()); });
+  return yrs.size?Array.from(yrs).sort():[new Date().getFullYear()];
+}
+function applyFilter(){
+  const year=document.getElementById('yearSelect').value;
+  const mf=Number(document.getElementById('monthFromSelect').value);
+  const mt=Number(document.getElementById('monthToSelect').value);
+  const note=document.getElementById('filterNote');
+  if(currentWB){
+    const d=processWorkbook(currentWB,{year,monthFrom:mf,monthTo:mt});
+    document.getElementById('dataInput').value=JSON.stringify(d,null,2);
+    render(d); save(d);
+    note.textContent=(mf!==1||mt!==12)?"Category Breakdown, Item Toplist and Food/Beverage Checks stay full-period — those source sheets aren't broken down by month.":'';
+  } else {
+    let d; try{d=JSON.parse(localStorage.getItem(LS_KEY))||REAL_DATA;}catch(e){d=REAL_DATA;}
+    d=JSON.parse(JSON.stringify(d));
+    const wanted=MONTH_NAMES.slice(mf-1,mt);
+    d.dailyTrend=(d.dailyTrend||[]).filter(r=>wanted.includes(r.date));
+    d.movement=(d.movement||[]).filter(r=>wanted.includes(r.period));
+    d.costTrend=(d.costTrend||[]).filter(r=>wanted.includes(r.month));
+    render(d);
+    note.textContent='Only the trend/movement/cost charts reflect this range — re-upload the Excel file to fully recompute every panel.';
+  }
+}
+document.getElementById('excelFile').addEventListener('change',function(e){
+  const f=e.target.files[0]; if(!f) return;
+  document.getElementById('fileStatus').textContent='Processing '+f.name+'...';
+  const reader=new FileReader();
+  reader.onload=function(evt){
+    try{
+      const wb=XLSX.read(new Uint8Array(evt.target.result),{type:'array'});
+      currentWB=wb;
+      const years=detectYears(wb);
+      populateYearSelect(years);
+      document.getElementById('monthFromSelect').value=1;
+      document.getElementById('monthToSelect').value=12;
+      applyFilter();
+      document.getElementById('fileStatus').textContent='Loaded '+f.name;
+    }catch(err){ document.getElementById('fileStatus').textContent=''; alert('Could not process file: '+err.message); }
+  };
+  reader.readAsArrayBuffer(f);
+});
+populateMonthSelects();
+populateYearSelect([2026]);
+document.querySelectorAll('nav .tab').forEach(btn=>btn.addEventListener('click',()=>{
+  document.querySelectorAll('nav .tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active'); document.getElementById(btn.dataset.p).classList.add('active');
+}));
+document.getElementById('outletInput').addEventListener('change',e=>{
+  let d; try{d=JSON.parse(localStorage.getItem(LS_KEY)||'{}');}catch(err){d={};}
+  d.outlet=e.target.value; render(d); save(d);
+});
+const REAL_DATA = {"outlet": "HD (Hay Diner)", "kpis": [{"label": "Revenue (Jan-Aug)", "value": "\u20b132.23M"}, {"label": "Covers", "value": "60,531"}, {"label": "Ave Check", "value": "\u20b1532"}, {"label": "Food Cost %", "value": "28.7%"}, {"label": "Beverage Cost %", "value": "27.5%"}], "dailyTrend": [{"date": "Jan", "sales2025": 0, "sales2026": 3974330}, {"date": "Feb", "sales2025": 0, "sales2026": 3521010}, {"date": "Mar", "sales2025": 0, "sales2026": 3354968}, {"date": "Apr", "sales2025": 0, "sales2026": 3625787}, {"date": "May", "sales2025": 0, "sales2026": 4865712}, {"date": "Jun", "sales2025": 0, "sales2026": 4597899}, {"date": "Jul", "sales2025": 0, "sales2026": 4771868}, {"date": "Aug", "sales2025": 0, "sales2026": 3151596}], "hourlySales": [{"hour": "6:00", "sales2025": 0, "sales2026": 21069, "covers2025": 0, "covers2026": 53}, {"hour": "7:00", "sales2025": 0, "sales2026": 1537657, "covers2025": 0, "covers2026": 2931}, {"hour": "8:00", "sales2025": 0, "sales2026": 2387070, "covers2025": 0, "covers2026": 4535}, {"hour": "9:00", "sales2025": 0, "sales2026": 2551943, "covers2025": 0, "covers2026": 4688}, {"hour": "10:00", "sales2025": 0, "sales2026": 2655351, "covers2025": 0, "covers2026": 4684}, {"hour": "11:00", "sales2025": 0, "sales2026": 3102861, "covers2025": 0, "covers2026": 5364}, {"hour": "12:00", "sales2025": 0, "sales2026": 3788244, "covers2025": 0, "covers2026": 6356}, {"hour": "13:00", "sales2025": 0, "sales2026": 2936524, "covers2025": 0, "covers2026": 5221}, {"hour": "14:00", "sales2025": 0, "sales2026": 2238228, "covers2025": 0, "covers2026": 4551}, {"hour": "15:00", "sales2025": 0, "sales2026": 1951039, "covers2025": 0, "covers2026": 4280}, {"hour": "16:00", "sales2025": 0, "sales2026": 2094514, "covers2025": 0, "covers2026": 4580}, {"hour": "17:00", "sales2025": 0, "sales2026": 2248567, "covers2025": 0, "covers2026": 4656}, {"hour": "18:00", "sales2025": 0, "sales2026": 2150287, "covers2025": 0, "covers2026": 4140}, {"hour": "19:00", "sales2025": 0, "sales2026": 1569899, "covers2025": 0, "covers2026": 2976}, {"hour": "20:00", "sales2025": 0, "sales2026": 585379, "covers2025": 0, "covers2026": 1314}, {"hour": "21:00", "sales2025": 0, "sales2026": 44538, "covers2025": 0, "covers2026": 202}], "mealPeriod": [{"period": "Breakfast", "sales": 9153090, "checks": 6582}, {"period": "Dinner", "sales": 4350102, "checks": 2972}, {"period": "Lunch", "sales": 12065858, "checks": 7958}, {"period": "Snacks", "sales": 6294120, "checks": 4853}], "majorDivision": [{"division": "FOOD", "sales": 28844176, "pct": "90.6%"}, {"division": "BEVERAGE", "sales": 2496976, "pct": "7.8%"}, {"division": "COGS", "sales": 434354, "pct": "1.4%"}, {"division": "GENSUP", "sales": 60296, "pct": "0.2%"}], "categoryBreakdown": [{"category": "BREAKFAST ALA-CARTE", "sales": 12074274, "qty": 29797}, {"category": "COFFEE", "sales": 3702072, "qty": 732513}, {"category": "SANDWICH & BURGER", "sales": 3665244, "qty": 8529}, {"category": "APPETIZER", "sales": 2586645, "qty": 7224}, {"category": "PASTA & NOODLE", "sales": 1894677, "qty": 4375}, {"category": "ALL IMPORTED MEAT MC", "sales": 1501013, "qty": 2940}, {"category": "SIDE DISH", "sales": 1490900, "qty": 14260}, {"category": "SHAKE & SMOOTHIE", "sales": 1106850, "qty": 5029}, {"category": "ALL POULTRY MC", "sales": 1013464, "qty": 2789}, {"category": "CHOCOLATE DRINKS", "sales": 699850, "qty": 5272}, {"category": "DESSERT", "sales": 524569, "qty": 2461}, {"category": "TEA", "sales": 406083, "qty": 5470}, {"category": "SOUP", "sales": 242267, "qty": 1192}, {"category": "SOFTDRINK", "sales": 219713, "qty": 2304}, {"category": "GENERAL SUPPLIES - RETAIL", "sales": 178910, "qty": 1079}, {"category": "MOCKTAIL", "sales": 174372, "qty": 1100}, {"category": "BEER", "sales": 89764, "qty": 644}, {"category": "WATER", "sales": 75371, "qty": 821}, {"category": "COCKTAIL", "sales": 73908, "qty": 246}, {"category": "CAKE", "sales": 41057, "qty": 103}, {"category": "RED WINE", "sales": 38524, "qty": 16}, {"category": "SAUCE & DRESSING (RECIPE)", "sales": 23473, "qty": 339}, {"category": "WHITE WINE", "sales": 19675, "qty": 6}, {"category": "DAIRY", "sales": 2553, "qty": 32}], "foodChecks": [{"category": "BREAKFAST ALA-CARTE", "sales": 12074274, "qty": 29797}, {"category": "SANDWICH & BURGER", "sales": 3665244, "qty": 8529}, {"category": "APPETIZER", "sales": 2586645, "qty": 7224}, {"category": "PASTA & NOODLE", "sales": 1894677, "qty": 4375}, {"category": "ALL IMPORTED MEAT MC", "sales": 1501013, "qty": 2940}, {"category": "SIDE DISH", "sales": 1490900, "qty": 14260}, {"category": "ALL POULTRY MC", "sales": 1013464, "qty": 2789}, {"category": "DESSERT", "sales": 524569, "qty": 2461}, {"category": "SOUP", "sales": 242267, "qty": 1192}, {"category": "GENERAL SUPPLIES - RETAIL", "sales": 178910, "qty": 1079}, {"category": "CAKE", "sales": 41057, "qty": 103}, {"category": "SAUCE & DRESSING (RECIPE)", "sales": 23473, "qty": 339}], "beverageChecks": [{"category": "COFFEE", "sales": 3702072, "qty": 732513}, {"category": "SHAKE & SMOOTHIE", "sales": 1106850, "qty": 5029}, {"category": "CHOCOLATE DRINKS", "sales": 699850, "qty": 5272}, {"category": "TEA", "sales": 406083, "qty": 5470}, {"category": "SOFTDRINK", "sales": 219713, "qty": 2304}, {"category": "MOCKTAIL", "sales": 174372, "qty": 1100}, {"category": "BEER", "sales": 89764, "qty": 644}, {"category": "WATER", "sales": 75371, "qty": 821}, {"category": "COCKTAIL", "sales": 73908, "qty": 246}, {"category": "RED WINE", "sales": 38524, "qty": 16}, {"category": "WHITE WINE", "sales": 19675, "qty": 6}, {"category": "DAIRY", "sales": 2553, "qty": 32}], "itemToplist": [{"item": "HD FRIED STEAK & EGG", "qty": 9608, "sales": 5011836}, {"item": "HD CHICKEN & WAFFLE", "qty": 8065, "sales": 2975799}, {"item": "HD MINI STEAK SKLT", "qty": 2940, "sales": 1501013}, {"item": "HD CHICKEN WINGS & FRIES", "qty": 3042, "sales": 1448518}, {"item": "HD CHICK PARM", "qty": 3323, "sales": 1441876}, {"item": "HD HAY BURGER", "qty": 2540, "sales": 1316518}, {"item": "HD CORNED HASH SKLT", "qty": 3603, "sales": 1311377}, {"item": "HD CRISPY CHIX SKLT", "qty": 2789, "sales": 1013464}, {"item": "HD CLASSIC PANCAKE", "qty": 2530, "sales": 789927}, {"item": "HD AMERICAN WAFFLE", "qty": 2350, "sales": 655457}, {"item": "HD BEEF NACHOS", "qty": 1888, "sales": 649176}, {"item": "HD CHEESE BURGER", "qty": 1274, "sales": 634496}, {"item": "HD CINNAMON PANCAKE", "qty": 1562, "sales": 610267}, {"item": "ADD-ON GARLIC RICE", "qty": 9096, "sales": 596767}, {"item": "HD CHILI HOTDOG", "qty": 1426, "sales": 543553}], "movement": [{"period": "Jan", "food": 3541872, "beverage": 282345}, {"period": "Feb", "food": 3178160, "beverage": 260798}, {"period": "Mar", "food": 3052355, "beverage": 254841}, {"period": "Apr", "food": 3264149, "beverage": 309735}, {"period": "May", "food": 4412259, "beverage": 396865}, {"period": "Jun", "food": 4196994, "beverage": 341476}, {"period": "Jul", "food": 4315396, "beverage": 410309}, {"period": "Aug", "food": 2882990, "beverage": 240609}], "costTrend": [{"month": "Jan", "costPct": 30.7}, {"month": "Feb", "costPct": 35.5}, {"month": "Mar", "costPct": 33.0}, {"month": "Apr", "costPct": 30.1}, {"month": "May", "costPct": 28.4}, {"month": "Jun", "costPct": 28.8}, {"month": "Jul", "costPct": 29.9}, {"month": "Aug", "costPct": 29.3}], "costShare": [{"category": "BREAKFAST ALA-CARTE", "pct": 3287190.0}, {"category": "COFFEE", "pct": 1235621.0}, {"category": "SANDWICH & BURGER", "pct": 1385645.0}, {"category": "APPETIZER", "pct": 845951.0}, {"category": "PASTA & NOODLE", "pct": 678838.0}, {"category": "ALL IMPORTED MEAT MC", "pct": 457060.0}, {"category": "OTHER", "pct": 1825971}], "menuCost": [{"item": "HD FRIED STEAK & EGG", "costPct": "28.9%"}, {"item": "HD CHICKEN & WAFFLE", "costPct": "22.6%"}, {"item": "HD MINI STEAK SKLT", "costPct": "30.5%"}, {"item": "HD CHICKEN WINGS & FRIES", "costPct": "32.3%"}, {"item": "HD CHICK PARM", "costPct": "34.4%"}, {"item": "HD HAY BURGER", "costPct": "44.6%"}, {"item": "HD CORNED HASH SKLT", "costPct": "33.8%"}, {"item": "HD CRISPY CHIX SKLT", "costPct": "24.5%"}, {"item": "HD CLASSIC PANCAKE", "costPct": "28.2%"}, {"item": "HD AMERICAN WAFFLE", "costPct": "19.8%"}, {"item": "HD BEEF NACHOS", "costPct": "30.4%"}, {"item": "HD CHEESE BURGER", "costPct": "35.0%"}], "recipeComponent": [{"component": "SEASONED BREADCRUMBS (SUB)", "movement": 544273.7}, {"component": "COUNTRY GRAVY (SUB)", "movement": 317422.0}, {"component": "TOMATO SAUCE (SUB)", "movement": 101165.5}, {"component": "SIMPLE SYRUP", "movement": 74848.9}, {"component": "EGG FRESH LARGE", "movement": 20009.9}, {"component": "HD PICKLED CUCUMBER SUB", "movement": 13715.0}, {"component": "COLE SLAW VINEGAR SUB", "movement": 8891.8}, {"component": "HD BURGER PATTY MIX (SUB)", "movement": 8200.0}, {"component": "HD CRISPY FRIED CHICKEN (SUB)", "movement": 6150.0}, {"component": "HD SPICY HONEY MAYO (SUB)", "movement": 5950.0}], "purchaseUnitCost": [{"item": "BEEF CUBE ROLL JACKS CREEK MB3+", "qty": 2377.7, "cost": 1809390}, {"item": "ATOK ARABICA COFFEE BEANS", "qty": 670.0, "cost": 803500}, {"item": "EGG FRESH LARGE", "qty": 68760.0, "cost": 583040}, {"item": "VEGETABLE OIL", "qty": 5713.0, "cost": 500834}, {"item": "CHICKEN THIGH BONELESS SKIN ON", "qty": 1730.2, "cost": 400230}, {"item": "CORNED BEEF PREMIUM", "qty": 911.1, "cost": 327564}, {"item": "BARISTA MILK", "qty": 3818.0, "cost": 281741}, {"item": "YOGURT PLAIN", "qty": 996.0, "cost": 258601}, {"item": "FRENCH FRIES NATURAL 3/8 CUT", "qty": 809.0, "cost": 218079}, {"item": "CHICKEN WINGS", "qty": 890.0, "cost": 192250}], "overallCost": [{"metric": "Food Cost %", "value": "28.7%"}, {"metric": "Beverage Cost %", "value": "27.5%"}, {"metric": "Blended F&B Cost %", "value": "28.6%"}, {"metric": "Total F&B Cost (\u20b1)", "value": "8,977,903"}]};
+(function init(){
+  let stored=null;
+  try{stored=JSON.parse(localStorage.getItem(LS_KEY));}catch(e){}
+  const d=stored||REAL_DATA;
+  document.getElementById('dataInput').value=JSON.stringify(d,null,2);
+  render(d);
+  if(!stored) save(d);
+})();
+</script>
+</body>
+</html>
